@@ -1,4 +1,4 @@
-import { Nav, Footer } from '@/components/SiteChrome';
+import { SiteNav, SiteFooter } from '@/components/SiteChrome';
 
 export type Block = { heading?: string; text: string };
 
@@ -12,27 +12,27 @@ export default function DocPage({
   blocks: Block[];
 }) {
   return (
-    <main className="relative min-h-screen">
-      <Nav />
-      <article className="mx-auto max-w-2xl px-6 py-12">
-        <h1 className="font-serif text-4xl tracking-tight text-ink">{title}</h1>
-        {updated ? (
-          <p className="mt-2 font-mono text-xs uppercase tracking-[0.15em] text-ink4">{updated}</p>
-        ) : null}
-        <div className="mt-10 space-y-8">
-          {blocks.map((b, i) => (
-            <section key={i}>
-              {b.heading ? (
-                <h2 className="font-serif text-xl text-ink">{b.heading}</h2>
-              ) : null}
-              <p className="mt-2 whitespace-pre-line font-sans leading-relaxed text-ink2">
-                {b.text}
-              </p>
-            </section>
-          ))}
-        </div>
-      </article>
-      <Footer />
+    <main>
+      <SiteNav />
+      <div className="wrap">
+        <article style={{ maxWidth: 720, margin: '0 auto', padding: '150px 0 40px' }}>
+          <h1 className="h2" style={{ marginBottom: 10 }}>{title}</h1>
+          {updated ? <div className="kicker">{updated}</div> : null}
+          <div style={{ marginTop: 44, display: 'flex', flexDirection: 'column', gap: 30 }}>
+            {blocks.map((b, i) => (
+              <section key={i}>
+                {b.heading ? (
+                  <h2 style={{ fontFamily: 'var(--serif)', fontWeight: 500, fontSize: 22, margin: '0 0 8px' }}>
+                    {b.heading}
+                  </h2>
+                ) : null}
+                <p className="body" style={{ whiteSpace: 'pre-line', color: 'var(--text-2)' }}>{b.text}</p>
+              </section>
+            ))}
+          </div>
+        </article>
+      </div>
+      <SiteFooter />
     </main>
   );
 }
