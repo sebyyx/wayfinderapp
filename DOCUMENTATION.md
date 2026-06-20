@@ -99,6 +99,18 @@ The `profiles`/movement metrics are migration-free (plain count/select).
   churn; CANCELLATION = auto-renew off (leading indicator). Churn rate ≈
   expired30d / (active subscriptions + expired30d). Needs the `0005_rc_events` migration.
 
+**Single unified webhook.** `app/api/revenuecat/webhook/route.ts` is the *one* RevenueCat
+webhook and does two jobs, so there's a single source of truth:
+1. **Logs** every event to `rc_events` (churn).
+2. **Syncs `profiles.subscription_tier`** server-side — authoritative, and works even if the
+   user never reopens the app. (The app's client-side SDK sync in `UserContext` stays as a
+   fast path; the two now agree because the webhook is canonical.) The app identifies users
+   in RevenueCat with their Supabase auth id, so `event.app_user_id == profiles.id`.
+   EXPIRATION → `free`; purchase/renewal/uncancellation → `monthly`/`lifetime` (by
+   entitlement `navigator`/`voyager`); CANCELLATION/BILLING_ISSUE → no downgrade (still
+   entitled until period end). Point RevenueCat at this URL only — do not configure a second
+   webhook.
+
 One remaining follow-up: **exact AI cost/errors** — log each Claude call from the Edge
 Functions into an `ai_call_log` table instead of estimating from row counts.
 

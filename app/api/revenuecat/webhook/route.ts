@@ -5,9 +5,50 @@ import { env } from '@/lib/env';
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-// Receives RevenueCat webhook events and stores them in `rc_events` so the admin
-// dashboard can compute churn. Configure this URL in RevenueCat → Integrations →
-// Webhooks, with the Authorization header set to REVENUECAT_WEBHOOK_SECRET.
+// The single RevenueCat webhook. It does two jobs so there is exactly one
+// source of truth for subscriptions:
+//   1. Syncs profiles.subscription_tier server-side (authoritative — works even
+//      if the user never reopens the app; the client SDK sync stays as a fast path).
+//   2. Logs every event into rc_events so the admin can compute churn.
+// Configure in RevenueCat → Integrations → Webhooks with the Authorization
+// header set to REVENUECAT_WEBHOOK_SECRET.
+
+type Tier = 'free' | 'monthly' | 'lifetime';
+
+// Maps a RevenueCat event to the resulting tier, or null when the event should
+// NOT change the tier (e.g. CANCELLATION = auto-renew off but still entitled
+// until expiration; BILLING_ISSUE = grace period).
+function tierChangeFromEvent(event: any): Tier | null {
+  const type: string = event?.type ?? '';
+  const ents: string[] = event?.entitlement_ids ?? (event?.entitlement_id ? [event.entitlement_id] : []);
+  const product: string = event?.product_id ?? '';
+
+  const entitledTier = (): Tier => {
+    if (ents.includes('voyager') || product.includes('voyager')) return 'lifetime';
+    if (ents.includes('navigator') || product.includes('navigator')) return 'monthly';
+    return 'monthly';
+  };
+
+  switch (type) {
+    case 'INITIAL_PURCHASE':
+    case 'RENEWAL':
+    case 'UNCANCELLATION':
+    case 'PRODUCT_CHANGE':
+    case 'NON_RENEWING_PURCHASE':
+    case 'SUBSCRIPTION_EXTENDED':
+      return entitledTier();
+    case 'EXPIRATION':
+      return 'free'; // access actually ended
+    case 'CANCELLATION':
+    case 'BILLING_ISSUE':
+      return null; // still entitled — don't downgrade
+    default:
+      return null; // TRANSFER, TEST, etc. — leave the client SDK to reconcile
+  }
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export async function POST(request: NextRequest) {
   const secret = env.revenueCatWebhookSecret();
   if (secret) {
@@ -26,12 +67,14 @@ export async function POST(request: NextRequest) {
 
   const event = payload?.event;
   if (!event?.type) {
-    // RevenueCat also sends test pings without an event — ack them.
+    // RevenueCat test pings have no event — ack them.
     return NextResponse.json({ ok: true });
   }
 
+  const sb = createAdminClient();
+
+  // 1) Log the raw event (idempotent on event_id) for churn analytics.
   try {
-    const sb = createAdminClient();
     await sb.from('rc_events').upsert(
       {
         event_id: event.id ?? null,
@@ -46,8 +89,19 @@ export async function POST(request: NextRequest) {
       { onConflict: 'event_id', ignoreDuplicates: true },
     );
   } catch {
-    // Never make RevenueCat retry forever on our storage hiccup; log-and-ack.
-    return NextResponse.json({ ok: true });
+    // Storage hiccup — fall through; never make RevenueCat retry forever.
+  }
+
+  // 2) Sync the subscription tier on the user's profile. The app identifies users
+  //    in RevenueCat with their Supabase auth id, so app_user_id == profiles.id.
+  try {
+    const appUserId: string | undefined = event.app_user_id;
+    const tier = tierChangeFromEvent(event);
+    if (tier && appUserId && UUID_RE.test(appUserId)) {
+      await sb.from('profiles').update({ subscription_tier: tier }).eq('id', appUserId);
+    }
+  } catch {
+    // Profile sync failure shouldn't fail the webhook ack.
   }
 
   return NextResponse.json({ ok: true });
