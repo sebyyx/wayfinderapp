@@ -1,0 +1,13 @@
+# Caddy gives automatic HTTPS (Let's Encrypt) for both the marketing site and the
+# admin subdomain, proxying everything to the Next.js container on :3000.
+# The admin subdomain is routed to the /admin tree by Next middleware.
+
+wayfinderapp.life, www.wayfinderapp.life {
+	encode zstd gzip
+	reverse_proxy web:3000
+}
+
+admin.wayfinderapp.life {
+	encode zstd gzip
+	reverse_proxy web:3000
+}

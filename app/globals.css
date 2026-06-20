@@ -1,0 +1,36 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background:
+    radial-gradient(120% 80% at 50% -10%, #111721 0%, #090f16 55%);
+  background-attachment: fixed;
+  color: #f1ece4;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Faint starfield used behind the hero. */
+.starfield::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(1px 1px at 20% 30%, #b5aea5 99%, transparent),
+    radial-gradient(1px 1px at 70% 20%, #84c1de 99%, transparent),
+    radial-gradient(1px 1px at 40% 70%, #bea9d9 99%, transparent),
+    radial-gradient(1px 1px at 85% 60%, #f1ece4 99%, transparent),
+    radial-gradient(1px 1px at 60% 85%, #9accaa 99%, transparent),
+    radial-gradient(1px 1px at 15% 80%, #f1ece4 99%, transparent);
+  opacity: 0.5;
+  pointer-events: none;
+}
