@@ -42,7 +42,10 @@ export async function getRevenueMetrics(): Promise<RevenueMetrics> {
     });
     if (!res.ok) return EMPTY_REVENUE;
 
-    const json = (await res.json()) as { metrics?: Array<{ id: string; value: number; unit?: string }> };
+    const json = (await res.json()) as {
+      currency?: string;
+      metrics?: Array<{ id: string; value: number; unit?: string }>;
+    };
     const metrics = json.metrics ?? [];
     const get = (id: string) => metrics.find((m) => m.id === id)?.value ?? null;
 
@@ -53,7 +56,7 @@ export async function getRevenueMetrics(): Promise<RevenueMetrics> {
       activeTrials: get('active_trials'),
       revenue28d: get('revenue'),
       newCustomers28d: get('new_customers'),
-      currency: metrics.find((m) => m.id === 'mrr')?.unit ?? 'USD',
+      currency: json.currency ?? 'USD',
     };
   } catch {
     return EMPTY_REVENUE;
