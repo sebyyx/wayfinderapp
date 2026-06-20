@@ -4,7 +4,24 @@ _Last updated: 2026-06-20_
 
 The marketing site (`wayfinderapp.life`) + internal admin dashboard
 (`admin.wayfinderapp.life`) for the Wayfinder iOS app. Separate repo from the Expo
-app; shares only the Supabase backend.
+app; shares only the Supabase backend. Repo: `github.com/sebyyx/wayfinderapp`.
+
+### Status — LIVE (2026-06-20)
+
+| Piece | State |
+|---|---|
+| Marketing site (animated landing + Privacy/About/Terms + favicon) | ✅ live, HTTPS |
+| Admin dashboard (users, archetypes, engagement, MRR, churn) | ✅ live, gated |
+| RevenueCat (live revenue + churn webhook + tier sync) | ✅ connected |
+| Auto-deploy (push to `main` → GitHub Actions → VPS) | ✅ active, verified |
+
+Deployed on the Hetzner box at `/opt/wayfinder-web`; DNS A records for `@`, `www`,
+`admin` → `46.225.137.138`.
+
+User-side TODO (1 min each): set App Store Connect Privacy URL to
+`https://wayfinderapp.life/privacy`; put `https://wayfinderapp.life` in the TikTok bio;
+upgrade Supabase to Pro before the marketing push. Optional follow-up: `ai_call_log`
+table for exact AI cost.
 
 ---
 
@@ -20,10 +37,15 @@ app; shares only the Supabase backend.
 
 - **Next.js 15** (App Router) + **TypeScript** + **Tailwind**, `output: 'standalone'`
 - **Supabase** — same project as the app (`ygqfxetqsldusdzfjlwu`). Two keys:
-  - *anon key* (public) — admin login session via `@supabase/ssr`
-  - **service role key** (server-only) — reads cross-user aggregates for the dashboard
-- **Hetzner CX22** VPS + **Docker Compose** + **Caddy** (automatic HTTPS)
-- Design system mirrors the app: "soft dusk" palette, Newsreader / Hanken Grotesk / IBM Plex Mono
+  - *anon/publishable key* (public) — admin login session via `@supabase/ssr`
+  - **secret key** (server-only) — reads cross-user aggregates for the dashboard.
+    NOTE: Supabase migrated to the new key format — we use a **secret key** (`sb_secret_…`,
+    the equivalent of the legacy `service_role`) in `SUPABASE_SERVICE_ROLE_KEY`. The anon key
+    is still the legacy JWT (also fine). Both work with `@supabase/supabase-js` + PostgREST.
+- **Hetzner CX22** VPS (2 vCPU / 4 GB + 2 GB swap) + **Docker Compose** + **Caddy** (automatic HTTPS)
+- Design system mirrors the app: "soft dusk" palette, Newsreader / Hanken Grotesk / IBM Plex Mono.
+  The landing is the design from `Pathfinder/design/Wayfinder-site` ported to a React client
+  component (animated morphing constellation, interactive archetype picker, phone mock, etc.).
 
 ## 3. Architecture
 
@@ -45,24 +67,33 @@ live paid app.
 
 ```
 app/
-  page.tsx              Landing
+  page.tsx              Landing (renders <Landing/>)
+  icon.svg              Favicon (Next auto-serves as /icon.svg on every page)
   about|privacy|terms/  Content pages (real app copy)
   admin/
     page.tsx            Gated dashboard (server component)
     login/page.tsx      Supabase password login (client)
-components/             Constellation, SiteChrome (Nav/Footer/AppStoreButton), DocPage
+  api/revenuecat/
+    webhook/route.ts    Single RevenueCat webhook: churn log + tier sync
+components/
+  Landing.tsx           Full animated marketing landing (client component)
+  SiteChrome.tsx        Shared SiteNav / SiteFooter (used by the doc pages)
+  DocPage.tsx           Privacy/About/Terms layout in the site design
 lib/
   env.ts               Validated env access (public vs server-only)
   auth.ts              getAdminUser() — session + email allowlist gate
-  metrics.ts           getOverview() — all dashboard aggregates (service role)
+  metrics.ts           getOverview() — Supabase dashboard aggregates (secret key)
+  revenuecat.ts        getRevenueMetrics() + getChurnMetrics()
   supabase/
-    admin.ts           service-role client (server-only)
+    admin.ts           secret-key client (server-only)
     server.ts          ssr cookie client (auth)
     browser.ts         anon client (login form)
-middleware.ts          admin subdomain → /admin rewrite + session refresh
+middleware.ts          admin subdomain → /admin rewrite (passes /api/* through) + session refresh
+public/.gitkeep        keeps public/ tracked (Dockerfile COPYs it; git drops empty dirs)
 Dockerfile             multi-stage standalone build
 docker-compose.yml     web + caddy
 Caddyfile              TLS + reverse proxy for both domains
+.github/workflows/deploy.yml   auto-deploy on push to main
 ```
 
 ## 5. Admin security model
@@ -165,48 +196,47 @@ Caddy provisions TLS automatically for all three hostnames on first request. Don
 cd /opt/wayfinder-web && git pull && docker compose up -d --build
 ```
 
-## 9. CI/CD — auto-deploy (GitHub Actions)
+## 9. CI/CD — auto-deploy (GitHub Actions) — ✅ ACTIVE
 
 `.github/workflows/deploy.yml` deploys on every push to `main` (or manually via the
-Actions tab). It rsyncs the repo to the server over SSH and runs
-`docker compose up -d --build` — no registry, and the server never needs git access to
-a private repo. The server's `.env` is excluded from the sync, so secrets are never
-overwritten.
+Actions tab / `gh workflow run "Deploy to Hetzner"`). It rsyncs the repo to the server
+over SSH and runs `docker compose up -d --build` — no registry, and the server never
+needs git access to the repo. The server's `.env` is excluded from the sync, so secrets
+are never overwritten. The build runs on the VPS (uses the 2 GB swap from §8).
 
-**One-time server prep** (besides §8):
-
-```bash
-# On the VPS: create the deploy dir and place .env (the workflow never touches .env)
-mkdir -p /opt/wayfinder-web
-# scp/paste your real .env into /opt/wayfinder-web/.env
-```
-
-**Generate a deploy key** (on your laptop), authorize it on the server:
-
-```bash
-ssh-keygen -t ed25519 -f wayfinder_deploy -N ''        # creates wayfinder_deploy(.pub)
-ssh-copy-id -i wayfinder_deploy.pub root@46.225.137.138 # or append .pub to authorized_keys
-```
-
-**GitHub repo → Settings → Secrets and variables → Actions** — add:
+**Already configured (2026-06-20):** a dedicated ed25519 deploy key was generated,
+authorized in the server's `~/.ssh/authorized_keys`, and its private half stored as the
+`SSH_KEY` repo secret (the local copy was deleted). Repo secrets, set via `gh secret set`:
 
 | Secret | Value |
 |---|---|
 | `SSH_HOST` | `46.225.137.138` |
-| `SSH_USER` | `root` (or a dedicated deploy user) |
-| `SSH_KEY` | contents of the **private** key `wayfinder_deploy` |
-| `SSH_PORT` | optional, defaults to `22` |
+| `SSH_USER` | `root` |
+| `SSH_KEY` | private half of the dedicated deploy key |
+| `SSH_PORT` | `22` |
 
-After that, every `git push` to `main` rebuilds and restarts the site automatically.
-The build runs on the VPS (uses the 2 GB swap from §8). If you'd rather keep the box
-light, switch the workflow to build the image in CI and push to GHCR, then have the
-server only `docker compose pull && up -d`.
+So the normal workflow now is just: **commit + push to `main`** → site updates in ~1–2 min.
+Watch runs at `github.com/sebyyx/wayfinderapp/actions`.
 
-## 10. After first deploy
+**Gotcha (fixed):** `public/.gitkeep` must stay tracked. git doesn't store empty dirs, so
+the Dockerfile's `COPY /app/public` failed on a clean CI checkout until `public/` had a
+tracked file. (Manual rsync deploys masked this because rsync copied the empty dir.)
 
+To keep the box lighter later, switch the workflow to build the image in CI and push to
+GHCR, then have the server only `docker compose pull && up -d`.
+
+## 10. Launch checklist
+
+Done:
+- [x] Site + admin live on the VPS with HTTPS
+- [x] `NEXT_PUBLIC_APP_STORE_URL` set (`apps.apple.com/app/id6781383516`)
+- [x] Admin Supabase user created; login verified at `admin.wayfinderapp.life`
+- [x] `0005_rc_events` migration run; RevenueCat connected (API key + webhook, §6)
+- [x] Auto-deploy active (§9)
+- [x] Favicon
+
+Still to do (user-side):
 - [ ] Set the Privacy Policy URL in **App Store Connect** → `https://wayfinderapp.life/privacy`
 - [ ] Put `https://wayfinderapp.life` in the **TikTok bio** (the funnel target)
-- [ ] Set the real **App Store URL** in `NEXT_PUBLIC_APP_STORE_URL`
-- [ ] Create the admin Supabase user and verify login at `admin.wayfinderapp.life`
-- [ ] Run the `0005_rc_events` migration; connect RevenueCat (API key + webhook, §6)
 - [ ] Upgrade Supabase to **Pro** before driving real traffic
+- [ ] (Optional) `ai_call_log` table for exact AI cost instead of estimates
