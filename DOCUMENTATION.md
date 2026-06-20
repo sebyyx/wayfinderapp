@@ -132,7 +132,44 @@ Caddy provisions TLS automatically for all three hostnames on first request. Don
 cd /opt/wayfinder-web && git pull && docker compose up -d --build
 ```
 
-## 9. After first deploy
+## 9. CI/CD — auto-deploy (GitHub Actions)
+
+`.github/workflows/deploy.yml` deploys on every push to `main` (or manually via the
+Actions tab). It rsyncs the repo to the server over SSH and runs
+`docker compose up -d --build` — no registry, and the server never needs git access to
+a private repo. The server's `.env` is excluded from the sync, so secrets are never
+overwritten.
+
+**One-time server prep** (besides §8):
+
+```bash
+# On the VPS: create the deploy dir and place .env (the workflow never touches .env)
+mkdir -p /opt/wayfinder-web
+# scp/paste your real .env into /opt/wayfinder-web/.env
+```
+
+**Generate a deploy key** (on your laptop), authorize it on the server:
+
+```bash
+ssh-keygen -t ed25519 -f wayfinder_deploy -N ''        # creates wayfinder_deploy(.pub)
+ssh-copy-id -i wayfinder_deploy.pub root@46.225.137.138 # or append .pub to authorized_keys
+```
+
+**GitHub repo → Settings → Secrets and variables → Actions** — add:
+
+| Secret | Value |
+|---|---|
+| `SSH_HOST` | `46.225.137.138` |
+| `SSH_USER` | `root` (or a dedicated deploy user) |
+| `SSH_KEY` | contents of the **private** key `wayfinder_deploy` |
+| `SSH_PORT` | optional, defaults to `22` |
+
+After that, every `git push` to `main` rebuilds and restarts the site automatically.
+The build runs on the VPS (uses the 2 GB swap from §8). If you'd rather keep the box
+light, switch the workflow to build the image in CI and push to GHCR, then have the
+server only `docker compose pull && up -d`.
+
+## 10. After first deploy
 
 - [ ] Set the Privacy Policy URL in **App Store Connect** → `https://wayfinderapp.life/privacy`
 - [ ] Put `https://wayfinderapp.life` in the **TikTok bio** (the funnel target)
