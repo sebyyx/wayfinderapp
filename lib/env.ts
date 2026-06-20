@@ -23,4 +23,6 @@ export const env = {
       .filter(Boolean),
   revenueCatApiKey: () => process.env.REVENUECAT_API_KEY ?? '',
   revenueCatProjectId: () => process.env.REVENUECAT_PROJECT_ID ?? '',
+  // Shared secret RevenueCat sends in the webhook Authorization header.
+  revenueCatWebhookSecret: () => process.env.REVENUECAT_WEBHOOK_SECRET ?? '',
 };

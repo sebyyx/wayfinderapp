@@ -87,10 +87,31 @@ Dashboard → Authentication → Users, then sign in at `/admin/login`.
 | Archetype distribution | Pacer/Weaver/Wanderer/Anchor/Spiral over 30d | `movement_syncs.dna_type` |
 | AI health & cost | readings today/7d, reviews 30d, estimated cost | `readings`, `weekly_reviews`, `monthly_reports` × per-call estimate |
 
-All migration-free (plain count/select). Two known follow-ups, both noted inline:
-- **Exact revenue** (MRR/trials/churn): wire the RevenueCat REST API in `lib/metrics.ts`.
-- **Exact AI cost/errors**: log each Claude call from the Edge Functions into an
-  `ai_call_log` table instead of estimating from row counts.
+The `profiles`/movement metrics are migration-free (plain count/select).
+
+**Revenue & churn (RevenueCat)** — `lib/revenuecat.ts`:
+- **MRR, active subscriptions, active trials, 28-day revenue, 28-day new customers** come
+  live from the RevenueCat v2 **Overview metrics** API
+  (`GET /v2/projects/{id}/metrics/overview`, Bearer = v2 secret key). If the key isn't set,
+  the dashboard shows a "not connected" notice instead of crashing.
+- **Churn** is derived from the RevenueCat **webhook** event stream we persist in
+  `rc_events` (`app/api/revenuecat/webhook/route.ts`). EXPIRATION/BILLING_ISSUE = real
+  churn; CANCELLATION = auto-renew off (leading indicator). Churn rate ≈
+  expired30d / (active subscriptions + expired30d). Needs the `0005_rc_events` migration.
+
+One remaining follow-up: **exact AI cost/errors** — log each Claude call from the Edge
+Functions into an `ai_call_log` table instead of estimating from row counts.
+
+### Connecting RevenueCat
+
+1. **API key:** RevenueCat → Project Settings → API keys → create a **v2 secret** key
+   (`sk_…`). Put it in `.env` as `REVENUECAT_API_KEY`; set `REVENUECAT_PROJECT_ID`.
+2. **Migration:** run `supabase/migrations/0005_rc_events.sql` (in the app repo) via
+   Supabase Dashboard → SQL Editor.
+3. **Webhook:** RevenueCat → Integrations → Webhooks → add
+   `https://admin.wayfinderapp.life/api/revenuecat/webhook`, set the **Authorization**
+   header to a secret value, and put that same value in `.env` as
+   `REVENUECAT_WEBHOOK_SECRET`. Churn fills in as events arrive (starts empty).
 
 ## 7. Local development
 
@@ -175,4 +196,5 @@ server only `docker compose pull && up -d`.
 - [ ] Put `https://wayfinderapp.life` in the **TikTok bio** (the funnel target)
 - [ ] Set the real **App Store URL** in `NEXT_PUBLIC_APP_STORE_URL`
 - [ ] Create the admin Supabase user and verify login at `admin.wayfinderapp.life`
+- [ ] Run the `0005_rc_events` migration; connect RevenueCat (API key + webhook, §6)
 - [ ] Upgrade Supabase to **Pro** before driving real traffic

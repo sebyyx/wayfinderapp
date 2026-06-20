@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { getAdminUser } from '@/lib/auth';
 import { getOverview } from '@/lib/metrics';
+import { getRevenueMetrics, getChurnMetrics } from '@/lib/revenuecat';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 
 export const dynamic = 'force-dynamic'; // always fresh, never cached
@@ -9,8 +10,10 @@ export default async function AdminDashboard() {
   const admin = await getAdminUser();
   if (!admin) redirect('/admin/login');
 
-  const o = await getOverview();
+  const [o, revenue] = await Promise.all([getOverview(), getRevenueMetrics()]);
+  const churn = await getChurnMetrics(revenue.activeSubscriptions);
   const maxArch = Math.max(1, ...o.archetypes.map((a) => a.count));
+  const cur = revenue.currency === 'USD' ? '$' : `${revenue.currency} `;
 
   async function signOut() {
     'use server';
@@ -43,8 +46,38 @@ export default async function AdminDashboard() {
         <Stat label="Paid share" value={`${o.acquisition.paidShare}%`} accent />
       </Section>
       <Note>
-        Subscription counts come from <code>profiles.subscription_tier</code>. For exact MRR, trials,
-        and churn, wire the RevenueCat API (see <code>lib/metrics.ts</code> TODO).
+        User & tier counts come from <code>profiles.subscription_tier</code>. Exact revenue is from
+        RevenueCat below.
+      </Note>
+
+      {/* Revenue & churn (RevenueCat) */}
+      <Section title="Revenue & churn (RevenueCat)">
+        {revenue.available ? (
+          <>
+            <Stat label="MRR" value={`${cur}${fmt(revenue.mrr)}`} accent />
+            <Stat label="Active subscriptions" value={fmt(revenue.activeSubscriptions)} />
+            <Stat label="Active trials" value={fmt(revenue.activeTrials)} />
+            <Stat label="Revenue · 28d" value={`${cur}${fmt(revenue.revenue28d)}`} accent />
+            <Stat label="New customers · 28d" value={fmt(revenue.newCustomers28d)} />
+            <Stat
+              label="Churn rate · 30d"
+              value={churn.churnRate === null ? '—' : `${churn.churnRate}%`}
+              accent
+            />
+            <Stat label="Expired · 30d" value={churn.expired30d} />
+            <Stat label="Cancellations · 30d" value={churn.cancelled30d} />
+          </>
+        ) : (
+          <div className="col-span-full rounded-md border border-white/10 bg-surface/40 p-5 font-sans text-sm text-ink3">
+            RevenueCat not connected. Set <code>REVENUECAT_API_KEY</code> (v2 secret) and{' '}
+            <code>REVENUECAT_PROJECT_ID</code> to show MRR, trials, and revenue.
+          </div>
+        )}
+      </Section>
+      <Note>
+        MRR / trials / revenue come live from the RevenueCat Overview API. Churn is computed from
+        RevenueCat webhook events stored in <code>rc_events</code>
+        {churn.hasData ? '' : ' (no events yet — wire the webhook to admin.wayfinderapp.life/api/revenuecat/webhook)'}.
       </Note>
 
       {/* Retention & engagement */}
@@ -113,4 +146,11 @@ function Stat({ label, value, accent = false }: { label: string; value: number |
 
 function Note({ children }: { children: React.ReactNode }) {
   return <p className="mt-3 font-sans text-xs leading-relaxed text-ink4">{children}</p>;
+}
+
+function fmt(value: number | null): string {
+  if (value === null || value === undefined) return '—';
+  return Number.isInteger(value)
+    ? value.toLocaleString('en-US')
+    : value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
