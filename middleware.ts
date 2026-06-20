@@ -10,6 +10,12 @@ export async function middleware(request: NextRequest) {
   const isAdminHost = host.startsWith('admin.');
   const url = request.nextUrl;
 
+  // API routes (e.g. the RevenueCat webhook) are NOT under /admin — let them
+  // through untouched on either host.
+  if (url.pathname.startsWith('/api')) {
+    return NextResponse.next();
+  }
+
   // Map the admin subdomain onto the /admin path tree.
   if (isAdminHost && !url.pathname.startsWith('/admin')) {
     const rewritten = url.clone();
