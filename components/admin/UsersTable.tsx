@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import type { AdminUserRow, Tier } from '@/lib/users';
 import { setTier } from '@/app/admin/users/actions';
 
@@ -39,9 +40,11 @@ function UserRow({ u }: { u: AdminUserRow }) {
   return (
     <tr className="border-b border-white/5 align-top hover:bg-surface/20">
       <td className="px-4 py-3">
-        <div className="text-ink">{u.name || '—'}</div>
-        <div className="text-xs text-ink3">{u.email || u.id}</div>
-        {u.archetype && <div className="mt-0.5 text-xs text-ink4">{u.archetype}</div>}
+        <Link href={`/admin/users/${u.id}`} className="group">
+          <div className="text-ink group-hover:text-accent">{u.name || '—'}</div>
+          <div className="text-xs text-ink3 group-hover:text-ink2">{u.email || u.id}</div>
+          {u.archetype && <div className="mt-0.5 text-xs text-ink4">{u.archetype}</div>}
+        </Link>
       </td>
       <td className="px-4 py-3">
         <TierBadge tier={u.tier} />

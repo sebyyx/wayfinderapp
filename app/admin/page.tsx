@@ -71,12 +71,12 @@ export default async function AdminDashboard() {
               <ul className="divide-y divide-white/5">
                 {attention.map((a) => (
                   <li key={a.user.id} className="flex items-center justify-between gap-3 px-4 py-3">
-                    <div className="min-w-0">
-                      <div className="truncate font-sans text-sm text-ink">
+                    <Link href={`/admin/users/${a.user.id}`} className="group min-w-0">
+                      <div className="truncate font-sans text-sm text-ink group-hover:text-accent">
                         {a.user.name || a.user.email || a.user.id}
                       </div>
                       <div className="truncate font-sans text-xs text-ink3">{a.user.email}</div>
-                    </div>
+                    </Link>
                     <span className={`shrink-0 font-sans text-xs ${a.tone}`}>{a.reason}</span>
                   </li>
                 ))}
@@ -95,16 +95,16 @@ export default async function AdminDashboard() {
               <ul className="divide-y divide-white/5">
                 {activity.map((ev, i) => (
                   <li key={i} className="flex items-center justify-between gap-3 px-4 py-3">
-                    <div className="min-w-0 flex items-center gap-2">
+                    <Link href={`/admin/users/${ev.user.id}`} className="group flex min-w-0 items-center gap-2">
                       {ev.kind === 'payment' ? <TierBadge tier={ev.user.tier} /> : (
                         <span className="inline-block rounded bg-white/5 px-2 py-0.5 text-xs text-ink3">
                           signup
                         </span>
                       )}
-                      <span className="truncate font-sans text-sm text-ink2">
+                      <span className="truncate font-sans text-sm text-ink2 group-hover:text-accent">
                         {ev.user.name || ev.user.email || ev.user.id}
                       </span>
-                    </div>
+                    </Link>
                     <span className="shrink-0 font-sans text-xs text-ink4">
                       {ev.kind === 'payment' ? 'paid ' : 'joined '}
                       {fmtRelative(ev.at)}

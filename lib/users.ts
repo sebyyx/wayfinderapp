@@ -210,3 +210,119 @@ function numOrNull(v: unknown): number | null {
   const n = typeof v === 'string' ? Number(v) : (v as number);
   return Number.isFinite(n) ? n : null;
 }
+
+// ── Single-user detail ───────────────────────────────────────────────────────
+
+export type RcEvent = {
+  type: string;
+  at: string;
+  product: string | null;
+  store: string | null;
+  price: string | null; // formatted, e.g. "$4.99"
+};
+
+export type UserDetail = {
+  row: AdminUserRow;
+  purpose: string | null;
+  theme: string | null;
+  stats: { syncs: number; readings: number; journals: number };
+  events: RcEvent[];
+};
+
+export async function getUserDetail(id: string): Promise<UserDetail | null> {
+  const sb = createAdminClient();
+
+  const { data: profile } = await sb
+    .from('profiles')
+    .select('id, name, archetype, purpose, theme, subscription_tier, created_at')
+    .eq('id', id)
+    .maybeSingle();
+
+  if (!profile) return null;
+  const p = profile as any;
+
+  const [emailById, rcById, activeById, events, syncs, readings, journals] = await Promise.all([
+    fetchEmails(sb),
+    fetchBilling(sb, [id]),
+    fetchLastActive(sb, [id]),
+    fetchEvents(sb, id),
+    count(sb, 'movement_syncs', (q) => q.eq('user_id', id)),
+    count(sb, 'readings', (q) => q.eq('user_id', id)),
+    count(sb, 'journal_entries', (q) => q.eq('user_id', id)),
+  ]);
+
+  const tier = (p.subscription_tier ?? 'free') as Tier;
+  const rc = rcById.get(id);
+  const now = Date.now();
+  const nextDueAt = tier === 'lifetime' ? null : rc?.nextDueAt ?? null;
+
+  const row: AdminUserRow = {
+    id: p.id,
+    email: emailById.get(p.id) ?? null,
+    name: p.name ?? null,
+    archetype: p.archetype ?? null,
+    tier,
+    createdAt: p.created_at ?? null,
+    isPaid: tier !== 'free',
+    lastPaymentAt: rc?.lastPaymentAt ? new Date(rc.lastPaymentAt).toISOString() : null,
+    nextDueAt: nextDueAt ? new Date(nextDueAt).toISOString() : null,
+    store: rc?.store ?? null,
+    willRenew: tier === 'monthly' ? rc?.willRenew ?? null : null,
+    isExpired: tier !== 'free' && nextDueAt !== null && nextDueAt < now,
+    hasBillingIssue: rc?.lastEventType === 'BILLING_ISSUE',
+    lastActiveAt: activeById.get(p.id) ?? null,
+  };
+
+  return {
+    row,
+    purpose: p.purpose ?? null,
+    theme: p.theme ?? null,
+    stats: { syncs, readings, journals },
+    events,
+  };
+}
+
+async function count(
+  sb: ReturnType<typeof createAdminClient>,
+  table: string,
+  build: (q: any) => any,
+): Promise<number> {
+  try {
+    const { count: c } = await build(sb.from(table).select('*', { count: 'exact', head: true }));
+    return c ?? 0;
+  } catch {
+    return 0;
+  }
+}
+
+async function fetchEvents(
+  sb: ReturnType<typeof createAdminClient>,
+  id: string,
+): Promise<RcEvent[]> {
+  try {
+    const { data } = await sb
+      .from('rc_events')
+      .select('type, event_at, raw')
+      .eq('app_user_id', id)
+      .order('event_at', { ascending: false })
+      .limit(200);
+
+    return (data ?? []).map((ev: any) => {
+      const raw = (ev.raw ?? {}) as Record<string, any>;
+      const price = numOrNull(raw.price);
+      const currency = typeof raw.currency === 'string' ? raw.currency : null;
+      return {
+        type: ev.type as string,
+        at: ev.event_at as string,
+        product: (raw.product_id as string) ?? null,
+        store: (raw.store as string) ?? null,
+        price:
+          price !== null
+            ? `${currency === 'USD' || !currency ? '$' : `${currency} `}${price.toFixed(2)}`
+            : null,
+      };
+    });
+  } catch {
+    return [];
+  }
+}

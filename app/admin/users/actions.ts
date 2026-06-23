@@ -29,5 +29,6 @@ export async function setTier(formData: FormData): Promise<void> {
   const { error } = await sb.from('profiles').update({ subscription_tier: tier }).eq('id', userId);
   if (error) throw new Error(`Failed to update tier: ${error.message}`);
 
-  revalidatePath('/admin/users');
+  // Refresh every admin view (home, users list, and the user detail page).
+  revalidatePath('/admin', 'layout');
 }
