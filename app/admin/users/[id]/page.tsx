@@ -6,6 +6,7 @@ import { setTier } from '../actions';
 import { TierBadge, fmtDate, fmtRelative } from '@/components/admin/UsersTable';
 import { SyncHeatmap } from '@/components/admin/SyncHeatmap';
 import { DeleteUser } from '@/components/admin/DeleteUser';
+import { CopyButton } from '@/components/admin/CopyButton';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,7 +22,7 @@ export default async function UserDetailPage({
   const detail = await getUserDetail(id);
   if (!detail) notFound();
 
-  const { row: u, purpose, theme, stats, events, activity } = detail;
+  const { row: u, purpose, theme, stats, streak, events, activity, readings, journals } = detail;
 
   return (
     <main className="mx-auto max-w-content px-6 py-10">
@@ -29,7 +30,19 @@ export default async function UserDetailPage({
         <div>
           <p className="font-mono text-xs uppercase tracking-[0.2em] text-accent">Wayfinder · Admin</p>
           <h1 className="mt-1 font-serif text-3xl text-ink">{u.name || u.email || 'User'}</h1>
-          <p className="mt-1 font-sans text-sm text-ink3">{u.email || u.id}</p>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            {u.email ? (
+              <a
+                href={`mailto:${u.email}`}
+                className="font-sans text-sm text-accent hover:underline"
+              >
+                {u.email}
+              </a>
+            ) : (
+              <span className="font-sans text-sm text-ink3">no email</span>
+            )}
+            <CopyButton value={u.id} label="Copy id" />
+          </div>
         </div>
         <Link href="/admin/users" className="font-sans text-sm text-ink3 hover:text-ink">
           ← Users
@@ -84,6 +97,10 @@ export default async function UserDetailPage({
           <Field label="Theme">{theme ?? <span className="text-ink4">—</span>}</Field>
           <Field label="Joined">{fmtDate(u.createdAt)}</Field>
           <Field label="Last active">{fmtRelative(u.lastActiveAt)}</Field>
+          <Field label="Streak">
+            <span className="text-ink">{streak.current}d</span>
+            <span className="text-ink4"> current · {streak.longest}d longest</span>
+          </Field>
           <div className="mt-4 grid grid-cols-3 gap-3 border-t border-white/10 pt-4">
             <Mini label="Syncs" value={stats.syncs} />
             <Mini label="Readings" value={stats.readings} />
@@ -102,6 +119,57 @@ export default async function UserDetailPage({
           <SyncHeatmap activity={activity} />
         </div>
       </section>
+
+      {/* Readings & journals content */}
+      <div className="mt-10 grid gap-6 lg:grid-cols-2">
+        <section>
+          <h2 className="font-serif text-lg text-ink">
+            Readings <span className="text-ink4">· {readings.length} latest</span>
+          </h2>
+          <div className="mt-3 space-y-2">
+            {readings.length === 0 && (
+              <p className="rounded-md border border-white/10 bg-surface/40 px-4 py-6 font-sans text-sm text-ink3">
+                No readings yet.
+              </p>
+            )}
+            {readings.map((r) => (
+              <details key={r.date} className="rounded-md border border-white/10 bg-surface/40 px-4 py-3">
+                <summary className="flex cursor-pointer items-center justify-between gap-3 font-sans text-sm text-ink">
+                  <span className="truncate">{r.title || r.archetype || 'Reading'}</span>
+                  <span className="shrink-0 font-mono text-xs text-ink4">{r.date}</span>
+                </summary>
+                <div className="mt-3 space-y-2 font-sans text-sm leading-relaxed">
+                  <Layer label="Observation" text={r.observation} />
+                  <Layer label="Reflection" text={r.reflection} />
+                  <Layer label="Action" text={r.action} />
+                  <Layer label="Question" text={r.reflectionQuestion} />
+                </div>
+              </details>
+            ))}
+          </div>
+        </section>
+
+        <section>
+          <h2 className="font-serif text-lg text-ink">
+            Journal <span className="text-ink4">· {journals.length} latest</span>
+          </h2>
+          <div className="mt-3 space-y-2">
+            {journals.length === 0 && (
+              <p className="rounded-md border border-white/10 bg-surface/40 px-4 py-6 font-sans text-sm text-ink3">
+                No journal entries yet.
+              </p>
+            )}
+            {journals.map((j) => (
+              <div key={j.date} className="rounded-md border border-white/10 bg-surface/40 px-4 py-3">
+                <div className="font-mono text-xs text-ink4">{j.date}</div>
+                <p className="mt-1 whitespace-pre-wrap font-sans text-sm leading-relaxed text-ink2">
+                  {j.text || <span className="text-ink4">(empty)</span>}
+                </p>
+              </div>
+            ))}
+          </div>
+        </section>
+      </div>
 
       {/* RevenueCat event history */}
       <section className="mt-10">
@@ -159,6 +227,16 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       <span className="font-sans text-xs text-ink3">{label}</span>
       <span className="text-right font-sans text-sm text-ink2">{children}</span>
     </div>
+  );
+}
+
+function Layer({ label, text }: { label: string; text: string | null }) {
+  if (!text) return null;
+  return (
+    <p className="text-ink2">
+      <span className="font-mono text-xs uppercase tracking-wide text-ink4">{label} </span>
+      {text}
+    </p>
   );
 }
 

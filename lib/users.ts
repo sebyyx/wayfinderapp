@@ -223,13 +223,28 @@ export type RcEvent = {
   price: string | null; // formatted, e.g. "$4.99"
 };
 
+export type ReadingRow = {
+  date: string;
+  archetype: string | null;
+  title: string | null;
+  observation: string | null;
+  reflection: string | null;
+  action: string | null;
+  reflectionQuestion: string | null;
+};
+
+export type JournalRow = { date: string; text: string };
+
 export type UserDetail = {
   row: AdminUserRow;
   purpose: string | null;
   theme: string | null;
   stats: { syncs: number; readings: number; journals: number };
+  streak: { current: number; longest: number };
   events: RcEvent[];
   activity: { date: string; count: number }[]; // per-day sync counts, oldest→newest
+  readings: ReadingRow[];
+  journals: JournalRow[];
 };
 
 const TIMELINE_DAYS = 119; // 17 weeks for a clean calendar heatmap
@@ -246,17 +261,21 @@ export async function getUserDetail(id: string): Promise<UserDetail | null> {
   if (!profile) return null;
   const p = profile as any;
 
-  const [emailById, rcById, activeById, events, activity, syncs, readings, journals] =
-    await Promise.all([
-      fetchEmails(sb),
-      fetchBilling(sb, [id]),
-      fetchLastActive(sb, [id]),
-      fetchEvents(sb, id),
-      fetchSyncTimeline(sb, id),
-      count(sb, 'movement_syncs', (q) => q.eq('user_id', id)),
-      count(sb, 'readings', (q) => q.eq('user_id', id)),
-      count(sb, 'journal_entries', (q) => q.eq('user_id', id)),
-    ]);
+  const [
+    emailById, rcById, activeById, events, activity,
+    readingRows, journalRows, syncs, readingsCount, journalsCount,
+  ] = await Promise.all([
+    fetchEmails(sb),
+    fetchBilling(sb, [id]),
+    fetchLastActive(sb, [id]),
+    fetchEvents(sb, id),
+    fetchSyncTimeline(sb, id),
+    fetchReadings(sb, id),
+    fetchJournals(sb, id),
+    count(sb, 'movement_syncs', (q) => q.eq('user_id', id)),
+    count(sb, 'readings', (q) => q.eq('user_id', id)),
+    count(sb, 'journal_entries', (q) => q.eq('user_id', id)),
+  ]);
 
   const tier = (p.subscription_tier ?? 'free') as Tier;
   const rc = rcById.get(id);
@@ -284,10 +303,77 @@ export async function getUserDetail(id: string): Promise<UserDetail | null> {
     row,
     purpose: p.purpose ?? null,
     theme: p.theme ?? null,
-    stats: { syncs, readings, journals },
+    stats: { syncs, readings: readingsCount, journals: journalsCount },
+    streak: computeStreaks(activity),
     events,
     activity,
+    readings: readingRows,
+    journals: journalRows,
   };
+}
+
+// current = consecutive active days ending today; longest = best run in window.
+function computeStreaks(activity: { date: string; count: number }[]): {
+  current: number;
+  longest: number;
+} {
+  let longest = 0;
+  let run = 0;
+  for (const a of activity) {
+    if (a.count > 0) {
+      run += 1;
+      if (run > longest) longest = run;
+    } else {
+      run = 0;
+    }
+  }
+  // run now reflects the trailing streak (loop ended on the newest day).
+  return { current: run, longest };
+}
+
+async function fetchReadings(
+  sb: ReturnType<typeof createAdminClient>,
+  id: string,
+): Promise<ReadingRow[]> {
+  try {
+    const { data } = await sb
+      .from('readings')
+      .select('date, archetype, content')
+      .eq('user_id', id)
+      .order('date', { ascending: false })
+      .limit(12);
+    return (data ?? []).map((r: any) => {
+      const c = (r.content ?? {}) as Record<string, any>;
+      return {
+        date: r.date as string,
+        archetype: (r.archetype as string) ?? null,
+        title: c.title ?? null,
+        observation: c.observation ?? c.reading ?? null,
+        reflection: c.reflection ?? null,
+        action: c.action ?? null,
+        reflectionQuestion: c.reflectionQuestion ?? null,
+      };
+    });
+  } catch {
+    return [];
+  }
+}
+
+async function fetchJournals(
+  sb: ReturnType<typeof createAdminClient>,
+  id: string,
+): Promise<JournalRow[]> {
+  try {
+    const { data } = await sb
+      .from('journal_entries')
+      .select('date, text')
+      .eq('user_id', id)
+      .order('date', { ascending: false })
+      .limit(12);
+    return (data ?? []).map((r: any) => ({ date: r.date as string, text: (r.text as string) ?? '' }));
+  } catch {
+    return [];
+  }
 }
 
 // Per-day sync counts over the trailing TIMELINE_DAYS window, filled with zeros
