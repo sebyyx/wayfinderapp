@@ -34,6 +34,8 @@ export type AdminUserRow = {
 };
 
 const CAP = 2000;
+const DAY = 86_400_000;
+const dateStr = (d: Date) => d.toISOString().slice(0, 10);
 
 // RevenueCat event types that represent (or revise) a paid period.
 const PAYMENT_EVENTS = new Set([
@@ -227,7 +229,10 @@ export type UserDetail = {
   theme: string | null;
   stats: { syncs: number; readings: number; journals: number };
   events: RcEvent[];
+  activity: { date: string; count: number }[]; // per-day sync counts, oldest→newest
 };
+
+const TIMELINE_DAYS = 119; // 17 weeks for a clean calendar heatmap
 
 export async function getUserDetail(id: string): Promise<UserDetail | null> {
   const sb = createAdminClient();
@@ -241,15 +246,17 @@ export async function getUserDetail(id: string): Promise<UserDetail | null> {
   if (!profile) return null;
   const p = profile as any;
 
-  const [emailById, rcById, activeById, events, syncs, readings, journals] = await Promise.all([
-    fetchEmails(sb),
-    fetchBilling(sb, [id]),
-    fetchLastActive(sb, [id]),
-    fetchEvents(sb, id),
-    count(sb, 'movement_syncs', (q) => q.eq('user_id', id)),
-    count(sb, 'readings', (q) => q.eq('user_id', id)),
-    count(sb, 'journal_entries', (q) => q.eq('user_id', id)),
-  ]);
+  const [emailById, rcById, activeById, events, activity, syncs, readings, journals] =
+    await Promise.all([
+      fetchEmails(sb),
+      fetchBilling(sb, [id]),
+      fetchLastActive(sb, [id]),
+      fetchEvents(sb, id),
+      fetchSyncTimeline(sb, id),
+      count(sb, 'movement_syncs', (q) => q.eq('user_id', id)),
+      count(sb, 'readings', (q) => q.eq('user_id', id)),
+      count(sb, 'journal_entries', (q) => q.eq('user_id', id)),
+    ]);
 
   const tier = (p.subscription_tier ?? 'free') as Tier;
   const rc = rcById.get(id);
@@ -279,7 +286,40 @@ export async function getUserDetail(id: string): Promise<UserDetail | null> {
     theme: p.theme ?? null,
     stats: { syncs, readings, journals },
     events,
+    activity,
   };
+}
+
+// Per-day sync counts over the trailing TIMELINE_DAYS window, filled with zeros
+// for days with no sync so the heatmap renders a continuous calendar.
+async function fetchSyncTimeline(
+  sb: ReturnType<typeof createAdminClient>,
+  id: string,
+): Promise<{ date: string; count: number }[]> {
+  const start = new Date(Date.now() - TIMELINE_DAYS * DAY);
+  const startStr = dateStr(start);
+  const tally = new Map<string, number>();
+  try {
+    const { data } = await sb
+      .from('movement_syncs')
+      .select('date')
+      .eq('user_id', id)
+      .gte('date', startStr)
+      .limit(10_000);
+    for (const row of data ?? []) {
+      const d = (row as any).date as string;
+      if (d) tally.set(d, (tally.get(d) ?? 0) + 1);
+    }
+  } catch {
+    // table/column missing → empty timeline
+  }
+
+  const out: { date: string; count: number }[] = [];
+  for (let i = TIMELINE_DAYS; i >= 0; i--) {
+    const d = dateStr(new Date(Date.now() - i * DAY));
+    out.push({ date: d, count: tally.get(d) ?? 0 });
+  }
+  return out;
 }
 
 async function count(

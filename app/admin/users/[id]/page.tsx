@@ -4,6 +4,8 @@ import { getAdminUser } from '@/lib/auth';
 import { getUserDetail, type AdminUserRow, type Tier } from '@/lib/users';
 import { setTier } from '../actions';
 import { TierBadge, fmtDate, fmtRelative } from '@/components/admin/UsersTable';
+import { SyncHeatmap } from '@/components/admin/SyncHeatmap';
+import { DeleteUser } from '@/components/admin/DeleteUser';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,7 +21,7 @@ export default async function UserDetailPage({
   const detail = await getUserDetail(id);
   if (!detail) notFound();
 
-  const { row: u, purpose, theme, stats, events } = detail;
+  const { row: u, purpose, theme, stats, events, activity } = detail;
 
   return (
     <main className="mx-auto max-w-content px-6 py-10">
@@ -93,6 +95,14 @@ export default async function UserDetailPage({
         </Card>
       </div>
 
+      {/* Sync activity timeline */}
+      <section className="mt-10">
+        <h2 className="font-serif text-lg text-ink">Sync activity</h2>
+        <div className="mt-3 rounded-md border border-white/10 bg-surface/40 p-5">
+          <SyncHeatmap activity={activity} />
+        </div>
+      </section>
+
       {/* RevenueCat event history */}
       <section className="mt-10">
         <h2 className="font-serif text-lg text-ink">RevenueCat events</h2>
@@ -128,6 +138,8 @@ export default async function UserDetailPage({
           </table>
         </div>
       </section>
+
+      <DeleteUser userId={u.id} email={u.email} />
     </main>
   );
 }

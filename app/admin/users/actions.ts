@@ -1,6 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import { redirect } from 'next/navigation';
 import { getAdminUser } from '@/lib/auth';
 import { createAdminClient } from '@/lib/supabase/admin';
 import type { Tier } from '@/lib/users';
@@ -31,4 +32,60 @@ export async function setTier(formData: FormData): Promise<void> {
 
   // Refresh every admin view (home, users list, and the user detail page).
   revalidatePath('/admin', 'layout');
+}
+
+// Permanently deletes a user: their app data, then the auth identity. This is
+// irreversible. The form requires the admin to type the user's email (verified
+// here too) so a stray click can't nuke an account.
+const CHILD_TABLES_BY_USER = [
+  'movement_syncs',
+  'readings',
+  'journal_entries',
+  'reading_feedback',
+  'weekly_reviews',
+  'monthly_reports',
+];
+
+export async function deleteUser(formData: FormData): Promise<void> {
+  const admin = await getAdminUser();
+  if (!admin) throw new Error('Not authorized');
+
+  const userId = String(formData.get('userId') ?? '');
+  const confirmEmail = String(formData.get('confirmEmail') ?? '').trim().toLowerCase();
+  if (!userId) throw new Error('Missing user id');
+
+  const sb = createAdminClient();
+
+  // Verify the typed email matches the account before doing anything.
+  const { data: authUser } = await sb.auth.admin.getUserById(userId);
+  const actualEmail = authUser?.user?.email?.toLowerCase() ?? '';
+  if (!actualEmail || confirmEmail !== actualEmail) {
+    throw new Error('Confirmation email does not match');
+  }
+
+  // Best-effort cleanup of app data (ignore tables that don't exist / FK order).
+  for (const table of CHILD_TABLES_BY_USER) {
+    try {
+      await sb.from(table).delete().eq('user_id', userId);
+    } catch {
+      /* table missing or no rows — continue */
+    }
+  }
+  try {
+    await sb.from('rc_events').delete().eq('app_user_id', userId);
+  } catch {
+    /* continue */
+  }
+  try {
+    await sb.from('profiles').delete().eq('id', userId);
+  } catch {
+    /* continue */
+  }
+
+  // Finally remove the auth identity (this is the point of no return).
+  const { error } = await sb.auth.admin.deleteUser(userId);
+  if (error) throw new Error(`Failed to delete auth user: ${error.message}`);
+
+  revalidatePath('/admin', 'layout');
+  redirect('/admin/users');
 }
