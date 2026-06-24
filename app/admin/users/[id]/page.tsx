@@ -76,7 +76,7 @@ export default async function UserDetailPage({
 
           {!u.pendingOnboarding && (
           <div className="mt-4 border-t border-white/10 pt-4">
-            <p className="font-sans text-xs text-ink3">Set tier (in-app access only)</p>
+            <p className="font-sans text-xs text-ink3">Set tier (RevenueCat promotional grant)</p>
             <form action={setTier} className="mt-2 flex gap-2">
               <input type="hidden" name="userId" value={u.id} />
               {(['free', 'monthly', 'lifetime'] as Tier[]).map((t) => (

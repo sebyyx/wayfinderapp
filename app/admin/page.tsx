@@ -131,8 +131,8 @@ export default async function AdminDashboard() {
           <UsersTable users={recentUsers} />
         </div>
         <p className="mt-3 font-sans text-xs leading-relaxed text-ink4">
-          Setting a tier grants/revokes in-app access instantly but does not bill anyone — real billing
-          is in the App Store via RevenueCat.
+          Setting a tier grants/revokes a RevenueCat promotional entitlement (takes effect in the app)
+          and does not bill anyone — real billing stays in the App Store.
         </p>
       </section>
     </main>

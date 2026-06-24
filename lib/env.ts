@@ -23,6 +23,11 @@ export const env = {
       .filter(Boolean),
   revenueCatApiKey: () => process.env.REVENUECAT_API_KEY ?? '',
   revenueCatProjectId: () => process.env.REVENUECAT_PROJECT_ID ?? '',
+  // v1 "Secret API Key" — required for granting/revoking promotional
+  // entitlements (the v2 key above does NOT work for the v1 subscriber API).
+  // Falls back to REVENUECAT_API_KEY in case the same secret is reused.
+  revenueCatSecretKey: () =>
+    process.env.REVENUECAT_SECRET_KEY ?? process.env.REVENUECAT_API_KEY ?? '',
   // Shared secret RevenueCat sends in the webhook Authorization header.
   revenueCatWebhookSecret: () => process.env.REVENUECAT_WEBHOOK_SECRET ?? '',
 };

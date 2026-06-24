@@ -146,10 +146,11 @@ export default async function AdminUsers({
       </div>
 
       <p className="mt-3 font-sans text-xs leading-relaxed text-ink4">
-        Tier is the in-app access flag (<code>profiles.subscription_tier</code>). Setting it grants or
-        revokes access instantly but does <strong>not</strong> bill anyone — real billing is in the App
-        Store via RevenueCat. Payment dates are derived from stored RevenueCat webhook events
-        (<code>rc_events</code>).
+        Setting a tier grants or revokes a <strong>RevenueCat promotional entitlement</strong>
+        (navigator/voyager) so it takes effect in the app, and mirrors it to{' '}
+        <code>profiles.subscription_tier</code>. It does <strong>not</strong> bill anyone and never
+        touches a real paid subscription. Payment dates are derived from stored RevenueCat webhook
+        events (<code>rc_events</code>).
       </p>
     </main>
   );

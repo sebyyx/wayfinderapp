@@ -8,6 +8,64 @@ import { createAdminClient } from '@/lib/supabase/admin';
 // Requires a v2 secret API key (REVENUECAT_API_KEY) + project id.
 
 const RC_BASE = 'https://api.revenuecat.com/v2';
+const RC_V1 = 'https://api.revenuecat.com/v1';
+
+// Entitlement ids must match the RevenueCat dashboard + the app's
+// tierFromCustomerInfo (navigator = monthly, voyager = lifetime).
+const TIER_ENTITLEMENT: Record<'monthly' | 'lifetime', { id: string; duration: string }> = {
+  monthly: { id: 'navigator', duration: 'monthly' },
+  lifetime: { id: 'voyager', duration: 'lifetime' },
+};
+const ALL_ENTITLEMENTS = ['navigator', 'voyager'];
+
+export type GrantResult = { ok: boolean; error?: string };
+
+// Applies an admin tier change as a RevenueCat *promotional* entitlement so the
+// app (which reads RC, not profiles) actually honors it. Promotional grants
+// never touch real paid subscriptions; revoking only clears promo grants.
+//   monthly  → grant navigator (1 month), revoke voyager promo
+//   lifetime → grant voyager (lifetime), revoke navigator promo
+//   free     → revoke both promo grants
+export async function applyTierToRevenueCat(
+  appUserId: string,
+  tier: 'free' | 'monthly' | 'lifetime',
+): Promise<GrantResult> {
+  const key = env.revenueCatSecretKey();
+  if (!key) return { ok: false, error: 'RevenueCat secret key not configured' };
+
+  const headers = { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' };
+  const sub = encodeURIComponent(appUserId);
+
+  const revoke = (ent: string) =>
+    fetch(`${RC_V1}/subscribers/${sub}/entitlements/${ent}/revoke_promotionals`, {
+      method: 'POST',
+      headers,
+    });
+
+  try {
+    if (tier === 'free') {
+      await Promise.all(ALL_ENTITLEMENTS.map(revoke));
+      return { ok: true };
+    }
+
+    const { id, duration } = TIER_ENTITLEMENT[tier];
+    // Clear the other tier's promo so two entitlements aren't active at once.
+    await Promise.all(ALL_ENTITLEMENTS.filter((e) => e !== id).map(revoke));
+
+    const res = await fetch(`${RC_V1}/subscribers/${sub}/entitlements/${id}/promotional`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ duration }),
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      return { ok: false, error: `RevenueCat ${res.status}: ${body.slice(0, 200)}` };
+    }
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'RevenueCat request failed' };
+  }
+}
 
 export type RevenueMetrics = {
   available: boolean;
