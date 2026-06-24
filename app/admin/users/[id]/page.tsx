@@ -1,9 +1,9 @@
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { getAdminUser } from '@/lib/auth';
-import { getUserDetail, type AdminUserRow, type Tier } from '@/lib/users';
-import { setTier } from '../actions';
+import { getUserDetail, type AdminUserRow } from '@/lib/users';
 import { TierBadge, fmtDate, fmtRelative } from '@/components/admin/UsersTable';
+import { TierControl } from '@/components/admin/TierControl';
 import { SyncHeatmap } from '@/components/admin/SyncHeatmap';
 import { DeleteUser } from '@/components/admin/DeleteUser';
 import { CopyButton } from '@/components/admin/CopyButton';
@@ -77,24 +77,9 @@ export default async function UserDetailPage({
           {!u.pendingOnboarding && (
           <div className="mt-4 border-t border-white/10 pt-4">
             <p className="font-sans text-xs text-ink3">Set tier (RevenueCat promotional grant)</p>
-            <form action={setTier} className="mt-2 flex gap-2">
-              <input type="hidden" name="userId" value={u.id} />
-              {(['free', 'monthly', 'lifetime'] as Tier[]).map((t) => (
-                <button
-                  key={t}
-                  name="tier"
-                  value={t}
-                  disabled={u.tier === t}
-                  className={`rounded px-3 py-1.5 text-sm transition ${
-                    u.tier === t
-                      ? 'cursor-default bg-accent/20 text-accent'
-                      : 'border border-white/10 text-ink3 hover:border-accent hover:text-ink'
-                  }`}
-                >
-                  {t === 'free' ? 'Free' : t === 'monthly' ? 'Monthly' : 'Lifetime'}
-                </button>
-              ))}
-            </form>
+            <div className="mt-2">
+              <TierControl userId={u.id} tier={u.tier} size="md" />
+            </div>
           </div>
           )}
         </Card>

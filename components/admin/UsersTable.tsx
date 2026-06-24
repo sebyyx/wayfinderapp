@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import type { AdminUserRow, Tier } from '@/lib/users';
-import { setTier } from '@/app/admin/users/actions';
+import { TierControl } from './TierControl';
 
 // Operations table: one row per user, with inline tier controls. Used both on
 // the admin home (recent slice) and the full /admin/users page.
@@ -64,24 +64,7 @@ function UserRow({ u }: { u: AdminUserRow }) {
         {u.pendingOnboarding ? (
           <span className="font-sans text-xs text-ink4">awaiting onboarding</span>
         ) : (
-        <form action={setTier} className="flex gap-1">
-          <input type="hidden" name="userId" value={u.id} />
-          {(['free', 'monthly', 'lifetime'] as Tier[]).map((t) => (
-            <button
-              key={t}
-              name="tier"
-              value={t}
-              disabled={u.tier === t}
-              className={`rounded px-2 py-1 text-xs transition ${
-                u.tier === t
-                  ? 'cursor-default bg-accent/20 text-accent'
-                  : 'border border-white/10 text-ink3 hover:border-accent hover:text-ink'
-              }`}
-            >
-              {t === 'free' ? 'Free' : t === 'monthly' ? 'Monthly' : 'Lifetime'}
-            </button>
-          ))}
-        </form>
+          <TierControl userId={u.id} tier={u.tier} />
         )}
       </td>
     </tr>

@@ -9,42 +9,42 @@ import type { Tier } from '@/lib/users';
 
 const TIERS: Tier[] = ['free', 'monthly', 'lifetime'];
 
-// Admin override of the in-app access flag (profiles.subscription_tier). This
-// controls what the app unlocks — it does NOT bill anyone (real billing lives in
-// the App Store via RevenueCat). Use for comps, support, and testing.
+export type TierActionState = { ok: boolean; message?: string };
+
+// Changes a user's tier. Source of truth on-device is RevenueCat, so we grant/
+// revoke a promotional entitlement there (that's what the app actually honors)
+// and mirror it to profiles for instant admin display.
 //
-// Caveat: a future RevenueCat webhook for this user can overwrite the tier to
-// match their real entitlement. That's intentional — the webhook is the source
-// of truth for paying customers.
-export async function setTier(formData: FormData): Promise<void> {
+// Returns a status object (never throws) so the UI can show inline feedback
+// instead of crashing the page with a server-side exception.
+export async function setTier(
+  _prev: TierActionState,
+  formData: FormData,
+): Promise<TierActionState> {
   const admin = await getAdminUser();
-  if (!admin) throw new Error('Not authorized');
+  if (!admin) return { ok: false, message: 'Not authorized' };
 
   const userId = String(formData.get('userId') ?? '');
   const tier = String(formData.get('tier') ?? '') as Tier;
-
   if (!userId || !TIERS.includes(tier)) {
-    throw new Error('Invalid tier change');
+    return { ok: false, message: 'Invalid tier change' };
   }
 
-  // Source of truth on-device is RevenueCat, so grant/revoke a promotional
-  // entitlement there first — that's what actually changes access in the app.
-  const rc = await applyTierToRevenueCat(userId, tier);
-
-  // Mirror to profiles for instant admin display (the RC webhook also keeps
-  // this in sync over time).
+  // Mirror to profiles for instant admin display.
   const sb = createAdminClient();
   const { error } = await sb.from('profiles').update({ subscription_tier: tier }).eq('id', userId);
-  if (error) throw new Error(`Failed to update profile tier: ${error.message}`);
+  if (error) return { ok: false, message: `DB update failed: ${error.message}` };
 
-  // Refresh every admin view (home, users list, and the user detail page).
+  // Grant/revoke the RevenueCat promotional entitlement (what the app reads).
+  const rc = await applyTierToRevenueCat(userId, tier);
+
+  // Refresh every admin view (home, users list, user detail).
   revalidatePath('/admin', 'layout');
 
-  // Surface a RevenueCat failure after the local mirror succeeded, so the admin
-  // knows the in-app grant didn't go through and can retry.
   if (!rc.ok) {
-    throw new Error(`Profile updated, but RevenueCat grant failed: ${rc.error}`);
+    return { ok: false, message: `Saved locally, but RevenueCat grant failed: ${rc.error}` };
   }
+  return { ok: true, message: `Set to ${tier}` };
 }
 
 // Permanently deletes a user: their app data, then the auth identity. This is
