@@ -20,7 +20,15 @@ export async function GET(request: Request) {
   ];
 
   const status = (u: (typeof users)[number]) =>
-    u.hasBillingIssue ? 'billing_issue' : !u.isPaid ? 'free' : u.isExpired ? 'expired' : 'active';
+    u.pendingOnboarding
+      ? 'pending_onboarding'
+      : u.hasBillingIssue
+        ? 'billing_issue'
+        : !u.isPaid
+          ? 'free'
+          : u.isExpired
+            ? 'expired'
+            : 'active';
 
   const rows = users.map((u) =>
     [

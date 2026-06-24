@@ -47,7 +47,7 @@ function UserRow({ u }: { u: AdminUserRow }) {
         </Link>
       </td>
       <td className="px-4 py-3">
-        <TierBadge tier={u.tier} />
+        {u.pendingOnboarding ? <span className="text-ink4">—</span> : <TierBadge tier={u.tier} />}
       </td>
       <td className="px-4 py-3">
         <StatusBadge u={u} />
@@ -61,6 +61,9 @@ function UserRow({ u }: { u: AdminUserRow }) {
       </td>
       <td className="px-4 py-3 text-ink2">{fmtRelative(u.lastActiveAt)}</td>
       <td className="px-4 py-3">
+        {u.pendingOnboarding ? (
+          <span className="font-sans text-xs text-ink4">awaiting onboarding</span>
+        ) : (
         <form action={setTier} className="flex gap-1">
           <input type="hidden" name="userId" value={u.id} />
           {(['free', 'monthly', 'lifetime'] as Tier[]).map((t) => (
@@ -79,6 +82,7 @@ function UserRow({ u }: { u: AdminUserRow }) {
             </button>
           ))}
         </form>
+        )}
       </td>
     </tr>
   );
@@ -98,6 +102,7 @@ export function TierBadge({ tier }: { tier: Tier }) {
 }
 
 function StatusBadge({ u }: { u: AdminUserRow }) {
+  if (u.pendingOnboarding) return <span className="text-xs text-amber-400">pending onboarding</span>;
   if (u.hasBillingIssue) return <span className="text-xs text-red-400">billing issue</span>;
   if (!u.isPaid) return <span className="text-xs text-ink4">free</span>;
   if (u.isExpired) return <span className="text-xs text-red-400">expired</span>;

@@ -6,7 +6,7 @@ import { UsersTable } from '@/components/admin/UsersTable';
 
 export const dynamic = 'force-dynamic'; // always fresh, never cached
 
-type Status = 'all' | 'paid' | 'free' | 'expired' | 'billing' | 'monthly' | 'lifetime';
+type Status = 'all' | 'paid' | 'free' | 'expired' | 'billing' | 'monthly' | 'lifetime' | 'pending';
 type Sort = 'recent' | 'active' | 'name';
 
 const STATUS_FILTERS: { key: Status; label: string }[] = [
@@ -17,6 +17,7 @@ const STATUS_FILTERS: { key: Status; label: string }[] = [
   { key: 'lifetime', label: 'Lifetime' },
   { key: 'expired', label: 'Expired' },
   { key: 'billing', label: 'Billing issue' },
+  { key: 'pending', label: 'Pending onboarding' },
 ];
 
 const SORTS: { key: Sort; label: string }[] = [
@@ -33,6 +34,7 @@ function matchesStatus(u: AdminUserRow, s: Status): boolean {
     case 'lifetime': return u.tier === 'lifetime';
     case 'expired': return u.isExpired;
     case 'billing': return u.hasBillingIssue;
+    case 'pending': return u.pendingOnboarding;
     default: return true;
   }
 }
@@ -53,6 +55,7 @@ export default async function AdminUsers({
 
   const paid = all.filter((u) => u.isPaid).length;
   const expired = all.filter((u) => u.isExpired).length;
+  const pending = all.filter((u) => u.pendingOnboarding).length;
 
   // Preserve the current query string on filter/sort links and the CSV export.
   const qs = (over: Record<string, string>) => {
@@ -94,6 +97,7 @@ export default async function AdminUsers({
         </form>
         <p className="font-sans text-sm text-ink3">
           {users.length} shown · <span className="text-accent">{paid} paid</span>
+          {pending > 0 && <span className="text-amber-400"> · {pending} pending</span>}
           {expired > 0 && <span className="text-red-400"> · {expired} expired</span>}
         </p>
         <Link

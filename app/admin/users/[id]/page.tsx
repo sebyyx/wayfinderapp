@@ -49,11 +49,18 @@ export default async function UserDetailPage({
         </Link>
       </header>
 
+      {u.pendingOnboarding && (
+        <div className="mt-6 rounded-md border border-amber-500/30 bg-amber-500/5 px-4 py-3 font-sans text-sm text-amber-200">
+          This account signed up but hasn&apos;t completed onboarding yet — no profile, syncs, or
+          readings exist. Tier controls are unavailable until they finish.
+        </div>
+      )}
+
       <div className="mt-8 grid gap-6 lg:grid-cols-2">
         {/* Subscription */}
         <Card title="Subscription">
           <Field label="Tier">
-            <TierBadge tier={u.tier} />
+            {u.pendingOnboarding ? <span className="text-ink4">—</span> : <TierBadge tier={u.tier} />}
           </Field>
           <Field label="Status">
             <StatusText u={u} />
@@ -67,6 +74,7 @@ export default async function UserDetailPage({
           </Field>
           <Field label="Store">{u.store ?? <span className="text-ink4">—</span>}</Field>
 
+          {!u.pendingOnboarding && (
           <div className="mt-4 border-t border-white/10 pt-4">
             <p className="font-sans text-xs text-ink3">Set tier (in-app access only)</p>
             <form action={setTier} className="mt-2 flex gap-2">
@@ -88,6 +96,7 @@ export default async function UserDetailPage({
               ))}
             </form>
           </div>
+          )}
         </Card>
 
         {/* Profile & activity */}
@@ -250,6 +259,7 @@ function Mini({ label, value }: { label: string; value: number }) {
 }
 
 function StatusText({ u }: { u: AdminUserRow }) {
+  if (u.pendingOnboarding) return <span className="text-amber-400">pending onboarding</span>;
   if (u.hasBillingIssue) return <span className="text-red-400">billing issue</span>;
   if (!u.isPaid) return <span className="text-ink4">free</span>;
   if (u.isExpired) return <span className="text-red-400">expired</span>;

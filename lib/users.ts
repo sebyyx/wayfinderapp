@@ -29,6 +29,7 @@ export type AdminUserRow = {
   willRenew: boolean | null; // null when not applicable (free / lifetime)
   isExpired: boolean; // paid tier but nextDueAt is in the past
   hasBillingIssue: boolean; // most recent RC event was a billing problem
+  pendingOnboarding: boolean; // auth account exists but no profile row yet
   // Engagement
   lastActiveAt: string | null;
 };
@@ -65,25 +66,23 @@ export async function getUsers(q?: string): Promise<AdminUserRow[]> {
     .limit(CAP);
 
   const rows = profiles ?? [];
-  if (rows.length === 0) return [];
-
   const ids = rows.map((r: any) => r.id);
 
-  const [emailById, rcById, activeById] = await Promise.all([
-    fetchEmails(sb),
+  const [authById, rcById, activeById] = await Promise.all([
+    fetchAuthUsers(sb),
     fetchBilling(sb, ids),
     fetchLastActive(sb, ids),
   ]);
 
   const now = Date.now();
 
-  let out: AdminUserRow[] = rows.map((r: any) => {
+  const onboarded: AdminUserRow[] = rows.map((r: any) => {
     const tier = (r.subscription_tier ?? 'free') as Tier;
     const rc = rcById.get(r.id);
     const nextDueAt = tier === 'lifetime' ? null : rc?.nextDueAt ?? null;
     return {
       id: r.id,
-      email: emailById.get(r.id) ?? null,
+      email: authById.get(r.id)?.email ?? null,
       name: r.name ?? null,
       archetype: r.archetype ?? null,
       tier,
@@ -95,9 +94,39 @@ export async function getUsers(q?: string): Promise<AdminUserRow[]> {
       willRenew: tier === 'monthly' ? rc?.willRenew ?? null : null,
       isExpired: tier !== 'free' && nextDueAt !== null && nextDueAt < now,
       hasBillingIssue: rc?.lastEventType === 'BILLING_ISSUE',
+      pendingOnboarding: false,
       lastActiveAt: activeById.get(r.id) ?? null,
     };
   });
+
+  // Auth accounts with no profile row yet = signed up but haven't finished
+  // onboarding. Surface them so brand-new signups show up immediately.
+  const profileIds = new Set(ids);
+  const pending: AdminUserRow[] = [];
+  for (const [id, info] of authById) {
+    if (profileIds.has(id)) continue;
+    pending.push({
+      id,
+      email: info.email,
+      name: null,
+      archetype: null,
+      tier: 'free',
+      createdAt: info.createdAt,
+      isPaid: false,
+      lastPaymentAt: null,
+      nextDueAt: null,
+      store: null,
+      willRenew: null,
+      isExpired: false,
+      hasBillingIssue: false,
+      pendingOnboarding: true,
+      lastActiveAt: null,
+    });
+  }
+
+  let out = [...onboarded, ...pending].sort(
+    (a, b) => Date.parse(b.createdAt ?? '') - Date.parse(a.createdAt ?? '') || 0,
+  );
 
   const term = q?.trim().toLowerCase();
   if (term) {
@@ -112,21 +141,27 @@ export async function getUsers(q?: string): Promise<AdminUserRow[]> {
   return out;
 }
 
-// Build an id → email map from the Auth admin API (paginated).
-async function fetchEmails(sb: ReturnType<typeof createAdminClient>): Promise<Map<string, string>> {
-  const map = new Map<string, string>();
+type AuthInfo = { email: string | null; createdAt: string | null };
+
+// id → { email, createdAt } from the Auth admin API (paginated).
+async function fetchAuthUsers(
+  sb: ReturnType<typeof createAdminClient>,
+): Promise<Map<string, AuthInfo>> {
+  const map = new Map<string, AuthInfo>();
   try {
     let page = 1;
     // perPage max is 1000; stop at CAP to bound work pre-launch.
     while (map.size < CAP) {
       const { data, error } = await sb.auth.admin.listUsers({ page, perPage: 1000 });
       if (error || !data?.users?.length) break;
-      for (const u of data.users) if (u.email) map.set(u.id, u.email);
+      for (const u of data.users) {
+        map.set(u.id, { email: u.email ?? null, createdAt: u.created_at ?? null });
+      }
       if (data.users.length < 1000) break;
       page += 1;
     }
   } catch {
-    // Auth admin unavailable → fall back to no emails.
+    // Auth admin unavailable → fall back to no auth data.
   }
   return map;
 }
@@ -258,14 +293,16 @@ export async function getUserDetail(id: string): Promise<UserDetail | null> {
     .eq('id', id)
     .maybeSingle();
 
-  if (!profile) return null;
+  // No profile yet → the account may still be pending onboarding. Fall back to
+  // the auth record so the detail page still works for brand-new signups.
+  if (!profile) return pendingDetail(sb, id);
   const p = profile as any;
 
   const [
-    emailById, rcById, activeById, events, activity,
+    authById, rcById, activeById, events, activity,
     readingRows, journalRows, syncs, readingsCount, journalsCount,
   ] = await Promise.all([
-    fetchEmails(sb),
+    fetchAuthUsers(sb),
     fetchBilling(sb, [id]),
     fetchLastActive(sb, [id]),
     fetchEvents(sb, id),
@@ -284,7 +321,7 @@ export async function getUserDetail(id: string): Promise<UserDetail | null> {
 
   const row: AdminUserRow = {
     id: p.id,
-    email: emailById.get(p.id) ?? null,
+    email: authById.get(p.id)?.email ?? null,
     name: p.name ?? null,
     archetype: p.archetype ?? null,
     tier,
@@ -296,6 +333,7 @@ export async function getUserDetail(id: string): Promise<UserDetail | null> {
     willRenew: tier === 'monthly' ? rc?.willRenew ?? null : null,
     isExpired: tier !== 'free' && nextDueAt !== null && nextDueAt < now,
     hasBillingIssue: rc?.lastEventType === 'BILLING_ISSUE',
+    pendingOnboarding: false,
     lastActiveAt: activeById.get(p.id) ?? null,
   };
 
@@ -309,6 +347,46 @@ export async function getUserDetail(id: string): Promise<UserDetail | null> {
     activity,
     readings: readingRows,
     journals: journalRows,
+  };
+}
+
+// Detail for an auth account that has no profile row yet.
+async function pendingDetail(
+  sb: ReturnType<typeof createAdminClient>,
+  id: string,
+): Promise<UserDetail | null> {
+  const { data } = await sb.auth.admin.getUserById(id);
+  const authUser = data?.user;
+  if (!authUser) return null;
+
+  const row: AdminUserRow = {
+    id,
+    email: authUser.email ?? null,
+    name: null,
+    archetype: null,
+    tier: 'free',
+    createdAt: authUser.created_at ?? null,
+    isPaid: false,
+    lastPaymentAt: null,
+    nextDueAt: null,
+    store: null,
+    willRenew: null,
+    isExpired: false,
+    hasBillingIssue: false,
+    pendingOnboarding: true,
+    lastActiveAt: null,
+  };
+
+  return {
+    row,
+    purpose: null,
+    theme: null,
+    stats: { syncs: 0, readings: 0, journals: 0 },
+    streak: { current: 0, longest: 0 },
+    events: [],
+    activity: [],
+    readings: [],
+    journals: [],
   };
 }
 
