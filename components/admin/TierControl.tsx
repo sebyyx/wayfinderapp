@@ -45,10 +45,10 @@ export function TierControl({
       {pending && <span className="font-sans text-xs text-ink4">Working…</span>}
       {!pending && state.message && (
         <span
-          className={`font-sans text-xs ${state.ok ? 'text-emerald-400' : 'text-red-400'}`}
+          className={`block max-w-[260px] whitespace-normal break-words font-sans text-xs ${state.ok ? 'text-emerald-400' : 'text-red-400'}`}
           title={state.message}
         >
-          {state.ok ? state.message : truncate(state.message, 60)}
+          {state.ok ? state.message : truncate(state.message, 240)}
         </span>
       )}
     </div>
